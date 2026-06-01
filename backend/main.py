@@ -52,6 +52,7 @@ class EOSRequest(BaseModel):
 
 class EOSResponse(BaseModel):
     status: str
+    start_of_speech: str
     end_of_speech: str
     confidence: float
     reasoning: str
@@ -77,106 +78,100 @@ def evaluate_single_segment(text: str, duration_seconds: float, session_start_ti
     end_dt = start_dt + timedelta(seconds=duration_seconds + offset_seconds)
     end_time_str = end_dt.strftime("%H:%M:%S.%f")[:-3]
     
+    # Speech started offset_seconds after the session start
+    start_speech_dt = start_dt + timedelta(seconds=offset_seconds)
+    start_time_str = start_speech_dt.strftime("%H:%M:%S.%f")[:-3]
+    
     if not words:
-        return {
+        res = {
             "status": "pending",
             "end_of_speech": end_time_str,
             "confidence": 1.0,
             "reasoning": "Empty transcript.",
             "eos_detected": False
         }
+    else:
+        last_word = words[-1].strip(".,?!;:")
         
-    last_word = words[-1].strip(".,?!;:")
-    
-    # If trailing word is a filler, it's NOT an end of speech
-    if last_word in fillers:
-        return {
-            "status": "pending",
-            "end_of_speech": end_time_str,
-            "confidence": 0.95,
-            "reasoning": f"Trailing filler word '{last_word}' detected; user likely continuing.",
-            "eos_detected": False
-        }
-        
-    # Check for sentence-ending punctuation (high confidence EOS)
-    if text_lower.endswith(('.', '?', '!')):
-        # Avoid premature triggers on short sentence segments if it looks like a poem or descriptive recital
-        if len(words) < 5 and not any(phrase in text_lower for phrase in ["yes", "no", "stop"]):
-            return {
+        # If trailing word is a filler, it's NOT an end of speech
+        if last_word in fillers:
+            res = {
                 "status": "pending",
                 "end_of_speech": end_time_str,
-                "confidence": 0.80,
-                "reasoning": "Terminal punctuation detected but phrase length is too short for semantic finality.",
+                "confidence": 0.95,
+                "reasoning": f"Trailing filler word '{last_word}' detected; user likely continuing.",
                 "eos_detected": False
             }
-        return {
-            "status": "success",
-            "end_of_speech": end_time_str,
-            "confidence": 0.96,
-            "reasoning": "Sentence ends with terminal punctuation and fulfills linguistic requirements.",
-            "eos_detected": True
-        }
-        
-    # Common short complete phrases (greetings / commands)
-    short_complete_phrases = {"hello", "hi", "hey", "stop", "help", "yes", "no", "ok", "okay", "thanks", "thank you"}
-    if text_lower in short_complete_phrases:
-        return {
-            "status": "success",
-            "end_of_speech": end_time_str,
-            "confidence": 0.95,
-            "reasoning": f"Short complete phrase '{text_lower}' detected.",
-            "eos_detected": True
-        }
-
-    # Structural/Intent Heuristic rules: common completed phrases
-    continuation_words = [
-        "the", "a", "an", "is", "are", "was", "were", "of", "to", "for", "with", "and", "or", "but", 
-        "because", "my", "your", "his", "her", "their", "our", "that", "which", "who", 
-        "if", "when", "as", "by", "about", "in", "on", "at", "than", "then", "so",
-        "i", "you", "he", "she", "we", "they", "this", "these", "those",
-        "want", "need", "like", "explain", "show", "tell", "ask", "make", "get", "know", 
-        "think", "believe", "find", "give", "take", "use", "say", "see", "create", "build", "run", "do"
-    ]
-    
-    if last_word in continuation_words:
-        return {
-            "status": "pending",
-            "end_of_speech": end_time_str,
-            "confidence": 0.90,
-            "reasoning": f"Trailing continuation word '{last_word}' detected; user likely continuing.",
-            "eos_detected": False
-        }
-        
-    question_words = ["what", "how", "why", "who", "when", "where", "can", "could", "do", "is", "are", "explain", "tell"]
-    is_question_start = any(text_lower.startswith(qw) for qw in question_words)
-    
-    if is_question_start:
-        if len(words) >= 4:
-            return {
+        # Check for sentence-ending punctuation (high confidence EOS)
+        elif text_lower.endswith(('.', '?', '!')):
+            # Avoid premature triggers on short sentence segments if it looks like a poem or descriptive recital
+            if len(words) < 5 and not any(phrase in text_lower for phrase in ["yes", "no", "stop"]):
+                res = {
+                    "status": "pending",
+                    "end_of_speech": end_time_str,
+                    "confidence": 0.80,
+                    "reasoning": "Terminal punctuation detected but phrase length is too short for semantic finality.",
+                    "eos_detected": False
+                }
+            else:
+                res = {
+                    "status": "success",
+                    "end_of_speech": end_time_str,
+                    "confidence": 0.96,
+                    "reasoning": "Sentence ends with terminal punctuation and fulfills linguistic requirements.",
+                    "eos_detected": True
+                }
+        # Common short complete phrases (greetings / commands)
+        elif text_lower in {"hello", "hi", "hey", "stop", "help", "yes", "no", "ok", "okay", "thanks", "thank you"}:
+            res = {
+                "status": "success",
+                "end_of_speech": end_time_str,
+                "confidence": 0.95,
+                "reasoning": f"Short complete phrase '{text_lower}' detected.",
+                "eos_detected": True
+            }
+        elif last_word in [
+            "the", "a", "an", "is", "are", "was", "were", "of", "to", "for", "with", "and", "or", "but", 
+            "because", "my", "your", "his", "her", "their", "our", "that", "which", "who", 
+            "if", "when", "as", "by", "about", "in", "on", "at", "than", "then", "so",
+            "i", "you", "he", "she", "we", "they", "this", "these", "those",
+            "want", "need", "like", "explain", "show", "tell", "ask", "make", "get", "know", 
+            "think", "believe", "find", "give", "take", "use", "say", "see", "create", "build", "run", "do"
+        ]:
+            res = {
+                "status": "pending",
+                "end_of_speech": end_time_str,
+                "confidence": 0.90,
+                "reasoning": f"Trailing continuation word '{last_word}' detected; user likely continuing.",
+                "eos_detected": False
+            }
+        elif any(text_lower.startswith(qw) for qw in ["what", "how", "why", "who", "when", "where", "can", "could", "do", "is", "are", "explain", "tell"]) and len(words) >= 4:
+            res = {
                 "status": "success",
                 "end_of_speech": end_time_str,
                 "confidence": 0.85,
                 "reasoning": "Intent completion: Structured question/command seems complete.",
                 "eos_detected": True
             }
-    else:
-        # Heavily penalize short declarative statements to prevent cutting off early verses of poems/lists
-        if len(words) >= 8:
-            return {
+        elif len(words) >= 8:
+            res = {
                 "status": "success",
                 "end_of_speech": end_time_str,
                 "confidence": 0.88,
                 "reasoning": "Linguistic completion: Statement has sufficient length and complete structure.",
                 "eos_detected": True
             }
+        else:
+            res = {
+                "status": "pending",
+                "end_of_speech": end_time_str,
+                "confidence": 0.80,
+                "reasoning": "Incomplete clause or continuous narration chunk. Defaulting to pending state.",
+                "eos_detected": False
+            }
             
-    return {
-        "status": "pending",
-        "end_of_speech": end_time_str,
-        "confidence": 0.80,
-        "reasoning": "Incomplete clause or continuous narration chunk. Defaulting to pending state.",
-        "eos_detected": False
-    }
+    res["start_of_speech"] = start_time_str
+    return res
 
 # Local Rule-based Fallback Heuristic Evaluator
 def fallback_semantic_eos(transcript: str, duration_seconds: float, session_start_time: str) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
@@ -253,10 +248,11 @@ async def evaluate_eos(payload: EOSRequest):
                 "TIMESTAMP CALCULATION:\n"
                 f"- The user speech session started at {payload.session_start_time}.\n"
                 f"- The current elapsed duration is {payload.duration_seconds} seconds.\n"
-                "- Compute the precise timestamp 'end_of_speech' in 'HH:MM:SS.f' format relative to the overall session metrics.\n\n"
+                "- Compute the precise timestamps 'start_of_speech' and 'end_of_speech' in 'HH:MM:SS.f' format relative to the overall session metrics.\n\n"
                 "You MUST respond with EXACTLY a raw JSON object/array matching this format without markdown wrappers:\n"
                 "{\n"
                 '  "status": "success" | "pending",\n'
+                '  "start_of_speech": "HH:MM:SS.f",\n'
                 '  "end_of_speech": "HH:MM:SS.f",\n'
                 '  "confidence": Float (0.00 to 1.00),\n'
                 '  "reasoning": "Detailed string explaining structural finality, tone resolution, and why internal mid-stream gaps were bypassed.",\n'
@@ -296,6 +292,7 @@ async def evaluate_eos(payload: EOSRequest):
                         return [
                             EOSResponse(
                                 status=item.get("status", "success" if item.get("eos_detected") else "pending"),
+                                start_of_speech=item.get("start_of_speech", payload.session_start_time),
                                 end_of_speech=item.get("end_of_speech", datetime.now().strftime("%H:%M:%S.000")),
                                 confidence=float(item.get("confidence", 0.96)),
                                 reasoning=item.get("reasoning", "Linguistic analysis by LLM."),
@@ -304,6 +301,7 @@ async def evaluate_eos(payload: EOSRequest):
                         ]
                     return EOSResponse(
                         status=res_json.get("status", "success" if res_json.get("eos_detected") else "pending"),
+                        start_of_speech=res_json.get("start_of_speech", payload.session_start_time),
                         end_of_speech=res_json.get("end_of_speech", res_json.get("end_of_speech", "00:00:54.1")),
                         confidence=float(res_json.get("confidence", 0.96)),
                         reasoning=res_json.get("reasoning", "Linguistic analysis by LLM."),
@@ -384,7 +382,9 @@ async def generate_response(payload: GenerateResponseRequest):
 async def upload_audio(file: UploadFile = File(...)):
     """
     Endpoint for batch file uploads (.wav, .mp3).
-    Includes security controls: path validation, file size limit (10MB), and extension verification.
+    Transcribes the audio file and sends the full text to OpenRouter to evaluate 
+    End-Of-Speech markers natively. Returns a clean Dict for simple statements 
+    and a List[Dict] if a separate speech track or context switch is discovered.
     """
     allowed_extensions = {".wav", ".mp3"}
     _, ext = os.path.splitext(file.filename.lower())
@@ -409,6 +409,7 @@ async def upload_audio(file: UploadFile = File(...)):
     selected_transcript = ""
     duration = 0.0
 
+    # 1. NATIVE TRANSCRIPTION VIA GEMINI
     if HAS_GENAI and (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
         try:
             logger.info("Attempting audio transcription via google-genai SDK...")
@@ -434,115 +435,124 @@ async def upload_audio(file: UploadFile = File(...)):
                     }
                 )
             )
-            
             try:
                 client.files.delete(name=audio_file.name)
-            except Exception as delete_err:
-                logger.warning(f"Failed to delete file from Gemini Files API: {delete_err}")
+            except Exception:
+                pass
                 
-            res_content = response.text.strip()
-            res_json = json.loads(res_content)
+            res_json = json.loads(response.text.strip())
             selected_transcript = res_json.get("transcript", "")
             duration = float(res_json.get("duration", 0.0))
-            logger.info(f"Successfully transcribed audio via google-genai SDK: {selected_transcript} (Duration: {duration}s)")
         except Exception as sdk_err:
-            logger.error(f"google-genai SDK transcription failed: {sdk_err}. Falling back to OpenRouter.")
+            logger.error(f"google-genai SDK transcription failed: {sdk_err}")
 
+    # Fallback transcription via OpenRouter if SDK is not initialized/failed and key is present
     if not selected_transcript and OPENAI_API_KEY:
         try:
             encoded_audio = base64.b64encode(content).decode('utf-8')
             mime_type = "audio/wav" if ext == ".wav" else "audio/mp3"
             audio_data_uri = f"data:{mime_type};base64,{encoded_audio}"
             
-            headers = {
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://127.0.0.1:8000",
-                "X-Title": "Voice AI Uploader"
-            }
-            
+            headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
             payload = {
                 "model": "google/gemini-2.0-flash-001",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "Transcribe this audio file exactly and estimate its duration in seconds. Respond ONLY with a JSON object containing: {\"transcript\": \"string\", \"duration\": float}."
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": audio_data_uri
-                                }
-                            }
-                        ]
-                    }
-                ],
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Transcribe this audio file exactly and estimate its duration in seconds. Respond ONLY with a JSON object containing: {\"transcript\": \"string\", \"duration\": float}."},
+                        {"type": "image_url", "image_url": {"url": audio_data_uri}}
+                    ]
+                }],
                 "response_format": {"type": "json_object"}
             }
-            
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{OPENAI_BASE_URL}/chat/completions",
-                    headers=headers,
-                    json=payload
-                )
-                
+                response = await client.post(f"{OPENAI_BASE_URL}/chat/completions", headers=headers, json=payload)
                 if response.status_code == 200:
-                    data = response.json()
-                    res_content = data["choices"][0]["message"]["content"].strip()
-                    if res_content.startswith("```json"):
-                        res_content = res_content[7:-3].strip()
-                    elif res_content.startswith("```"):
-                        res_content = res_content[3:-3].strip()
-                        
-                    res_json = json.loads(res_content)
+                    res_json = json.loads(response.json()["choices"][0]["message"]["content"].strip())
                     selected_transcript = res_json.get("transcript", "")
                     duration = float(res_json.get("duration", 0.0))
-                    logger.info(f"Successfully transcribed audio via Gemini: {selected_transcript} (Duration: {duration}s)")
+                    logger.info(f"Successfully transcribed audio via Gemini OpenRouter: {selected_transcript} (Duration: {duration}s)")
         except Exception as e:
-            logger.error(f"Failed to transcribe audio via Gemini: {str(e)}. Falling back to mock transcripts.")
+            logger.error(f"Fallback OpenRouter transcription failed: {str(e)}")
 
-    if not selected_transcript:
-        mock_transcripts = [
-            "Hello there. I want to... uh... [pause] examine polymorphism in programming.",
-            "Can you explain... well... [pause] how to use decorators in Python?",
-            "This is a batch file transcription test. The system is working perfectly."
-        ]
-        import random
-        selected_transcript = random.choice(mock_transcripts)
-        duration = 0.0
-        
-    words = selected_transcript.split()
-    word_timestamps = []
-    
-    if duration <= 0:
-        duration = len(words) * 0.4
-
-    word_duration = duration / len(words) if words else 0.4
-    
-    current_time = 0.0
-    for w in words:
-        word_timestamps.append({
-            "word": w,
-            "start": round(current_time, 2),
-            "end": round(current_time + (word_duration * 0.75), 2)
-        })
-        current_time += word_duration
-        
+    # Clean up file buffer
     try:
         os.remove(file_path)
     except Exception:
         pass
-        
+
+    # Offline local mock fallback to ensure the application works out-of-the-box without keys
+    if not selected_transcript:
+        logger.warning("No API key configured or transcription failed. Falling back to default offline mock transcript.")
+        selected_transcript = "Can you explain... well... [pause] how to use decorators in Python?"
+        duration = 4.4
+
+    # 2. EVALUATE DIRECTLY VIA OPENROUTER NATIVE ENGINE
+    if OPENAI_API_KEY:
+        try:
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://127.0.0.1:8000",
+                "X-Title": "Voice AI Batch Processor"
+            }
+            
+            system_prompt = (
+                "You are an expert Voice AI Linguistic Evaluator specializing in End-of-Speech tracking.\n\n"
+                "CRITICAL OUTPUT FORMAT RULES:\n"
+                "1. If the user is speaking smoothly, reciting a continuous loop, or repeating a unified passage (e.g. reading a poem), "
+                "evaluate the final structural termination boundary and return exactly ONE raw JSON object.\n"
+                "2. If the user states a completely DIFFERENT speech altogether mid-way through (e.g., they switch from a formal poem recital to a completely unrelated "
+                "conversational question or completely shift structural context), you MUST treat them as independent utterances and return a JSON array containing "
+                "one JSON object for each separate speech track.\n\n"
+                "Calculate 'start_of_speech' and 'end_of_speech' in 'HH:MM:SS.f' format relative to a baseline session start time of 00:00:00.000.\n\n"
+                "JSON Schema for an evaluation object:\n"
+                "{\n"
+                '  "status": "success",\n'
+                '  "start_of_speech": "HH:MM:SS.f",\n'
+                '  "end_of_speech": "HH:MM:SS.f",\n'
+                '  "confidence": Float,\n'
+                '  "reasoning": "Detailed breakdown explaining thematic finality, tone resolution or context switching metrics.",\n'
+                '  "eos_detected": true\n'
+                "}"
+            )
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f"{OPENAI_BASE_URL}/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": "google/gemini-2.0-flash-001",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"Analyze this full batch transcript across a span of {duration} seconds: \"{selected_transcript}\""}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.1
+                    }
+                )
+                
+                if response.status_code == 200:
+                    content = response.json()["choices"][0]["message"]["content"].strip()
+                    evaluation_result = json.loads(content)
+                    
+                    # Return both the transcript context and the evaluation data
+                    return {
+                        "status": "success",
+                        "transcript": selected_transcript,
+                        "duration": round(duration, 2),
+                        "evaluation": evaluation_result
+                    }
+        except Exception as e:
+            logger.error(f"Direct OpenRouter Evaluation phase failed: {str(e)}")
+
+    # Heuristic fallback structure matching payload requirements
+    fallback_res = fallback_semantic_eos(selected_transcript, duration, "00:00:00")
     return {
         "status": "success",
-        "filename": file.filename,
         "transcript": selected_transcript,
-        "words": word_timestamps,
-        "duration": round(duration, 2)
+        "duration": round(duration, 2),
+        "evaluation": fallback_res
     }
 
 @app.websocket("/api/stream")

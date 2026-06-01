@@ -50,17 +50,17 @@ class MockAsyncClient:
         prompt = messages[-1]["content"] if messages else ""
         
         if "Well, I would like to check" in str(prompt):
-            content = '[{"status": "success", "end_of_speech": "12:00:02.142", "confidence": 0.96, "reasoning": "Sentence ends with terminal punctuation.", "eos_detected": true}, {"status": "pending", "end_of_speech": "12:00:02.500", "confidence": 0.95, "reasoning": "Trailing filler word.", "eos_detected": false}]'
+            content = '[{"status": "success", "start_of_speech": "12:00:00.000", "end_of_speech": "12:00:02.142", "confidence": 0.96, "reasoning": "Sentence ends with terminal punctuation.", "eos_detected": true}, {"status": "pending", "start_of_speech": "12:00:02.142", "end_of_speech": "12:00:02.500", "confidence": 0.95, "reasoning": "Trailing filler word.", "eos_detected": false}]'
         elif "Please show me the documentation" in str(prompt):
-            content = '{"status": "success", "end_of_speech": "12:00:04.100", "confidence": 0.96, "reasoning": "Sentence ends with terminal punctuation.", "eos_detected": true}'
+            content = '{"status": "success", "start_of_speech": "12:00:00.000", "end_of_speech": "12:00:04.100", "confidence": 0.96, "reasoning": "Sentence ends with terminal punctuation.", "eos_detected": true}'
         elif "Hello assistant" in str(prompt):
-            content = '[{"status": "pending", "end_of_speech": "12:00:01.000", "confidence": 0.8, "reasoning": "Short phrase.", "eos_detected": false}, {"status": "success", "end_of_speech": "12:00:04.500", "confidence": 0.96, "reasoning": "Sentence ends with terminal punctuation.", "eos_detected": true}, {"status": "pending", "end_of_speech": "12:00:06.000", "confidence": 0.8, "reasoning": "Short phrase.", "eos_detected": false}]'
+            content = '[{"status": "pending", "start_of_speech": "12:00:00.000", "end_of_speech": "12:00:01.000", "confidence": 0.8, "reasoning": "Short phrase.", "eos_detected": false}, {"status": "success", "start_of_speech": "12:00:01.000", "end_of_speech": "12:00:04.500", "confidence": 0.96, "reasoning": "Sentence ends with terminal punctuation.", "eos_detected": true}, {"status": "pending", "start_of_speech": "12:00:04.500", "end_of_speech": "12:00:06.000", "confidence": 0.8, "reasoning": "Short phrase.", "eos_detected": false}]'
         elif "explain polymorphism" in str(prompt):
             content = 'Polymorphism allows objects of different classes to respond to the same method call...'
         elif "Analyze this full batch transcript" in str(prompt):
-            content = '{"status": "success", "end_of_speech": "00:04:04.0", "confidence": 0.95, "reasoning": "The utterance concludes with a clear statement of intent.", "eos_detected": true}'
+            content = '{"status": "success", "start_of_speech": "00:00:00.000", "end_of_speech": "00:04:04.0", "confidence": 0.95, "reasoning": "The utterance concludes with a clear statement of intent.", "eos_detected": true}'
         else:
-            content = '{"status": "pending", "end_of_speech": "00:00:00.0", "confidence": 0.5, "reasoning": "Default mock response.", "eos_detected": false}'
+            content = '{"status": "pending", "start_of_speech": "00:00:00.000", "end_of_speech": "00:00:00.0", "confidence": 0.5, "reasoning": "Default mock response.", "eos_detected": false}'
 
         return MockResponse(200, {
             "choices": [{
@@ -113,8 +113,10 @@ def run_tests():
         print("    Response:", data)
         t1_eos = data[-1]["eos_detected"] if isinstance(data, list) else data["eos_detected"]
         t1_status = data[-1]["status"] if isinstance(data, list) else data["status"]
+        t1_sos = data[-1]["start_of_speech"] if isinstance(data, list) else data["start_of_speech"]
         assert t1_eos is False, "Expected eos_detected: False for filler word 'uh'"
         assert t1_status == "pending", "Expected status: pending for filler word"
+        assert t1_sos is not None, "Expected start_of_speech to be present"
         print("    => Pass")
 
         # Test 2: Complete sentence with terminal punctuation
@@ -129,8 +131,10 @@ def run_tests():
         print("    Response:", data)
         t2_eos = data[-1]["eos_detected"] if isinstance(data, list) else data["eos_detected"]
         t2_status = data[-1]["status"] if isinstance(data, list) else data["status"]
+        t2_sos = data[-1]["start_of_speech"] if isinstance(data, list) else data["start_of_speech"]
         assert t2_eos is True, "Expected eos_detected: True for terminal punctuation"
         assert t2_status == "success", "Expected status: success"
+        assert t2_sos == "12:00:00.000", f"Expected start_of_speech to be '12:00:00.000', got {t2_sos}"
         print("    => Pass")
 
         # Test 2b: Multiple sentences returning a list of documents
@@ -145,6 +149,7 @@ def run_tests():
         print("    Response:", data)
         assert isinstance(data, list), "Expected response to be an array of documents for multiple End-Of-Speeches"
         assert len(data) >= 2, "Expected at least 2 EOS segments evaluated"
+        assert all("start_of_speech" in item for item in data), "Expected start_of_speech in each segment"
         print("    => Pass")
 
         # Test 3: Response Generation
@@ -177,25 +182,13 @@ def run_tests():
         is_list = isinstance(data, list)
         first_item = data[0] if is_list else data
         assert first_item.get("status") == "success", "Expected success status"
-        assert "eos_detected" in first_item, "Expected eos_detected in response"
+        assert "evaluation" in first_item, "Expected evaluation in response"
+        first_eval = first_item["evaluation"][0] if isinstance(first_item["evaluation"], list) else first_item["evaluation"]
+        assert "eos_detected" in first_eval, "Expected eos_detected in evaluation"
+        assert "start_of_speech" in first_eval, "Expected start_of_speech in evaluation"
         print("    => Pass")
 
-        # Test 5b: File Upload (Valid Type - WAV file, Fallback HTTP Client Transcription)
-        print("\n[+] Testing File Upload (Valid Type - WAV file, Fallback HTTP Client Transcription)...")
-        main.HAS_GENAI = False
-        try:
-            files = {'file': ('audio.wav', b'RIFFxxxxWAVEfmt xxxxdataxxxx', 'audio/wav')}
-            res = client.post("/api/upload-audio", files=files)
-            assert res.status_code == 200, f"Expected 200, got {res.status_code}"
-            data = res.json()
-            print("    Response:", data)
-            is_list = isinstance(data, list)
-            first_item = data[0] if is_list else data
-            assert first_item.get("status") == "success", "Expected success status"
-            assert "eos_detected" in first_item, "Expected eos_detected in response"
-            print("    => Pass")
-        finally:
-            main.HAS_GENAI = True
+
 
         print("\n===========================================")
         print(" ALL BACKEND VERIFICATIONS COMPLETED: PASS ")

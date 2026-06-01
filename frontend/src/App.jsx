@@ -13,14 +13,14 @@ export default function App() {
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   const [history, setHistory] = useState([]);
   const [eosJson, setEosJson] = useState(null);
-  
+
   // Configuration Settings
   const [micSensitivity, setMicSensitivity] = useState(1.0);
   const [vadThreshold, setVadThreshold] = useState(0.85);
   const [couplingFactor, setCouplingFactor] = useState(0.80);
   const [isAecEnabled, setIsAecEnabled] = useState(true);
   const [selectedModel, setSelectedModel] = useState('google/gemini-2.0-flash');
-  
+
   // Audio Nodes & Canvas state
   const [isAudioActive, setIsAudioActive] = useState(false);
   const [micAnalyser, setMicAnalyser] = useState(null);
@@ -37,7 +37,7 @@ export default function App() {
   const vadRef = useRef(null);
   const aecRef = useRef(null);
   const eosTimeoutRef = useRef(null);
-  
+
   // New refs for speech detection fixes
   const latestTranscriptRef = useRef('');
   const vadConfidenceRef = useRef(0.0);
@@ -45,16 +45,16 @@ export default function App() {
   const eosRequestCounterRef = useRef(0);
   const currentDebounceDelayRef = useRef(650);
   const silenceFallbackTimeoutRef = useRef(null);
-  
+
   // TTS Ref Osc Node to generate reference carrier in Web Audio graph
   const ttsOscRef = useRef(null);
   const ttsGainRef = useRef(null);
-  
+
   // Timing references
   const sessionStartTimeRef = useRef(null);
   const speechStartTimeRef = useRef(null);
   const currentUtteranceRef = useRef(null);
-  
+
   // File Upload State
   const [isUploading, setIsUploading] = useState(false);
   const [uploadTimeline, setUploadTimeline] = useState(null);
@@ -172,7 +172,7 @@ export default function App() {
       if (state === 'LISTENING' && isAudioActive && recognitionRef.current) {
         try {
           recognitionRef.current.start();
-        } catch (e) {}
+        } catch (e) { }
       }
     };
 
@@ -246,7 +246,7 @@ export default function App() {
         setEosJson(data);
 
         // Transition to THINKING if Semantic EOS Evaluator triggers
-        const hasEOS = Array.isArray(data) 
+        const hasEOS = Array.isArray(data)
           ? data.some(item => item.eos_detected)
           : data.eos_detected;
 
@@ -271,7 +271,7 @@ export default function App() {
     // Choose dynamic delay based on confidence
     const debounceDelay = confidence >= 0.95 ? 400 : 750;
     currentDebounceDelayRef.current = debounceDelay;
-    
+
     eosTimeoutRef.current = setTimeout(() => {
       handleEOSTrigger(latestTranscriptRef.current || transcript);
     }, debounceDelay);
@@ -297,14 +297,14 @@ export default function App() {
   const handleEOSTrigger = async (finalTranscript) => {
     clearPendingEOSTransition();
     clearSilenceFallback();
-    
+
     const textToSubmit = latestTranscriptRef.current || finalTranscript || '';
     if (!textToSubmit.trim()) return;
 
     setState('THINKING');
     syncStateWithServer('THINKING');
     setASRState(false);
-    
+
     // Finalize user message in log
     updateTranscriptLog(textToSubmit, 'user', false);
 
@@ -313,7 +313,7 @@ export default function App() {
       const response = await fetch('/api/generate-response', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           prompt: textToSubmit,
           model: selectedModel
         })
@@ -334,10 +334,10 @@ export default function App() {
   const playAgentTTS = (text) => {
     setState('SPEAKING');
     syncStateWithServer('SPEAKING');
-    
+
     // Cancel any playing speech
     window.speechSynthesis.cancel();
-    
+
     // Save current utterance reference
     currentUtteranceRef.current = {
       text: text,
@@ -346,7 +346,7 @@ export default function App() {
     };
 
     const utterance = new SpeechSynthesisUtterance(text);
-    
+
     // Track index for truncation context preservation
     utterance.onboundary = (event) => {
       if (event.name === 'word' && currentUtteranceRef.current) {
@@ -366,7 +366,7 @@ export default function App() {
         if (prev === 'SPEAKING') {
           // Log complete message
           updateTranscriptLog(text, 'ai', false);
-          
+
           // Go back to listening
           syncStateWithServer('LISTENING');
           setTimeout(() => setASRState(true), 100);
@@ -387,35 +387,35 @@ export default function App() {
   // Manage Web Audio Synth nodes to model TTS acoustic bleed
   const startTTSReferenceSynth = () => {
     if (!audioContextRef.current) return;
-    
+
     try {
       // Create oscillator simulating speech vocal frequencies (e.g. 220Hz + harmonics)
       const osc = audioContextRef.current.createOscillator();
       const gain = audioContextRef.current.createGain();
-      
+
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(220, audioContextRef.current.currentTime);
-      
+
       // Low pass filter to make it sound slightly more voice-like (and not beep too loudly)
       const filter = audioContextRef.current.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(800, audioContextRef.current.currentTime);
 
       gain.gain.setValueAtTime(0.015, audioContextRef.current.currentTime); // Very soft background synth
-      
+
       osc.connect(filter);
       filter.connect(gain);
-      
+
       // Connect to the TTS Analyser so it displays on the screen
       if (ttsAnalyser) {
         gain.connect(ttsAnalyser);
       }
-      
+
       // Connect to destination speakers
       gain.connect(audioContextRef.current.destination);
-      
+
       osc.start();
-      
+
       ttsOscRef.current = osc;
       ttsGainRef.current = gain;
     } catch (e) {
@@ -434,7 +434,7 @@ export default function App() {
         ttsGainRef.current.disconnect();
         ttsGainRef.current = null;
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // Handle Speech Interruption
@@ -443,7 +443,7 @@ export default function App() {
       if (prev !== 'SPEAKING') return prev;
 
       console.warn("User speech onset detected. Triggering immediate interruption!");
-      
+
       // 1. Halt the TTS playback buffer immediately
       window.speechSynthesis.cancel();
       stopTTSReferenceSynth();
@@ -457,7 +457,7 @@ export default function App() {
       } else {
         spokenText = "[Interrupted]";
       }
-      
+
       updateTranscriptLog(spokenText, 'ai', false);
 
       // 3. Send event to websocket server
@@ -471,7 +471,7 @@ export default function App() {
 
       // Transition state
       syncStateWithServer('INTERRUPTED');
-      
+
       // Flash state INTERRUPTED red, then shift back to LISTENING
       setTimeout(() => {
         setState('LISTENING');
@@ -503,24 +503,24 @@ export default function App() {
       // Mic Analyser Node
       const mAnalyser = ctx.createAnalyser();
       mAnalyser.fftSize = 256;
-      
+
       // TTS Reference Analyser Node
       const tAnalyser = ctx.createAnalyser();
       tAnalyser.fftSize = 256;
 
       const source = ctx.createMediaStreamSource(stream);
-      
+
       // Insert gain node for sensitivity
       const gainNode = ctx.createGain();
       gainNode.gain.value = micSensitivity;
-      
+
       source.connect(gainNode);
       gainNode.connect(mAnalyser);
 
       micSourceRef.current = source;
       setMicAnalyser(mAnalyser);
       setTtsAnalyser(tAnalyser);
-      
+
       // Initialize VAD & AEC helper objects
       vadRef.current = new VoiceActivityDetector({
         energyThreshold: 0.015 / micSensitivity
@@ -531,7 +531,7 @@ export default function App() {
 
       setIsAudioActive(true);
       initializeASR();
-      
+
       // Start processing loop
       startProcessingLoop(mAnalyser, tAnalyser);
 
@@ -569,10 +569,10 @@ export default function App() {
     const fftSize = 128;
     const timeData = new Float32Array(fftSize);
     const freqData = new Float32Array(fftSize);
-    
+
     const ttsTimeData = new Float32Array(fftSize);
     const ttsFreqData = new Float32Array(fftSize);
-    
+
     const cleanTime = new Float32Array(fftSize);
 
     const process = () => {
@@ -581,7 +581,7 @@ export default function App() {
       // Extract raw mic values
       micAnal.getFloatTimeDomainData(timeData);
       micAnal.getFloatFrequencyData(freqData);
-      
+
       // Extract active TTS reference values
       if (ttsAnal) {
         ttsAnal.getFloatTimeDomainData(ttsTimeData);
@@ -591,9 +591,9 @@ export default function App() {
       // 1. Run Acoustic Echo Cancellation reference subtraction
       const aiSpeaking = (stateRef.current === 'SPEAKING');
       aecRef.current.couplingFactor = couplingFactorRef.current;
-      
+
       aecRef.current.cancelTimeDomain(timeData, ttsTimeData, cleanTime, aiSpeaking);
-      
+
       // Set values for the visualizer
       setCancelledData(new Float32Array(cleanTime));
 
@@ -606,12 +606,12 @@ export default function App() {
       }
 
       const confidence = vadRef.current.computeConfidence(
-        cleanTime, 
-        normalizedFreq, 
-        sampleRate, 
+        cleanTime,
+        normalizedFreq,
+        sampleRate,
         fftSize * 2
       );
-      
+
       setVadConfidence(confidence);
       vadConfidenceRef.current = confidence;
 
@@ -636,7 +636,7 @@ export default function App() {
         // If AEC was fully successful, cleanTime contains the user's speech amplitude
         const rawRMS = vadRef.current.calculateRMS(timeData);
         const cleanRMS = vadRef.current.calculateRMS(cleanTime);
-        
+
         // If clean signal still has substantial energy compared to the raw bleed,
         // it means there is an independent speech source (user voice)
         if (cleanRMS > 0.005) {
@@ -711,7 +711,7 @@ export default function App() {
       if (response.ok) {
         const result = await response.json();
         setUploadTimeline(result);
-        
+
         // Execute animated simulation of the timeline
         simulateBatchTimeline(result);
       } else {
@@ -725,83 +725,40 @@ export default function App() {
     }
   };
 
-  // Simulates feeding transcription tokens word-by-word into the evaluator
-  const simulateBatchTimeline = (timelineData) => {
-    const words = timelineData.words;
-    if (!words || words.length === 0) return;
+  // Simulates feeding transcription tokens word-by-word into the dashboard layout
+  const simulateBatchTimeline = (batchResponse) => {
+    const fullTranscript = batchResponse.transcript;
+    const evaluationData = batchResponse.evaluation;
 
-    // Reset transcription logs and states for visualization
+    if (!fullTranscript) return;
+
+    const words = fullTranscript.split(' ');
+
+    // Reset layout logs and states for visualization tracking
     setHistory([]);
     setState('LISTENING');
     setEosJson(null);
 
     let currentIndex = 0;
     let accumulatedText = '';
-    const startTimestamp = "00:00:00";
 
-    const stepToken = async () => {
-      if (currentIndex >= words.length) return;
-
-      const currentWordObj = words[currentIndex];
-      accumulatedText += (currentIndex === 0 ? '' : ' ') + currentWordObj.word;
-      
-      // Update transcript UI
-      updateTranscriptLog(accumulatedText, 'user', true);
-
-      // Evaluate Semantic EOS at this word token interval
-      const duration = currentWordObj.end;
-      
-      try {
-        const response = await fetch('/api/evaluate-eos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transcript: accumulatedText,
-            duration_seconds: duration,
-            session_start_time: startTimestamp,
-            model: selectedModel
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setEosJson(data);
-
-          const hasEOS = Array.isArray(data) 
-            ? data.some(item => item.eos_detected)
-            : data.eos_detected;
-
-          if (hasEOS) {
-            // Trigger transition to thinking
-            setState('THINKING');
-            updateTranscriptLog(accumulatedText, 'user', false);
-            
-            // Fetch response simulation
-            setTimeout(async () => {
-              const resp = await fetch('/api/generate-response', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  prompt: accumulatedText,
-                  model: selectedModel
-                })
-              });
-              if (resp.ok) {
-                const respData = await resp.json();
-                setState('SPEAKING');
-                updateTranscriptLog(respData.response, 'ai', false);
-                setTimeout(() => setState('LISTENING'), 3000);
-              }
-            }, 1000);
-            return; // Terminate early because EOS hit
-          }
-        }
-      } catch (e) {
-        console.error(e);
+    const stepToken = () => {
+      if (currentIndex >= words.length) {
+        // Timeline finished running typing animations -> immediately inject final structural context
+        setEosJson(evaluationData);
+        setState('THINKING');
+        updateTranscriptLog(fullTranscript, 'user', false);
+        return;
       }
 
+      accumulatedText += (currentIndex === 0 ? '' : ' ') + words[currentIndex];
+
+      // Update running text log view
+      updateTranscriptLog(accumulatedText, 'user', true);
+
       currentIndex++;
-      setTimeout(stepToken, 400); // Step every 400ms to simulate speech tempo
+      // Smooth dynamic pacing based on structural lengths
+      setTimeout(stepToken, 180);
     };
 
     stepToken();
@@ -813,12 +770,12 @@ export default function App() {
       <header className="header">
         <h1 className="header-title">VOICE AI LINGUISTIC EOS PLATFORM</h1>
         <div className="header-status">
-          <span 
-            className="status-dot" 
-            style={{ 
+          <span
+            className="status-dot"
+            style={{
               color: isWebSocketConnected ? 'var(--color-listening)' : 'var(--color-interrupted)',
               backgroundColor: isWebSocketConnected ? 'var(--color-listening)' : 'var(--color-interrupted)'
-            }} 
+            }}
           />
           <span>{isWebSocketConnected ? 'SYSTEM ACTIVE' : 'LOCAL MOCK MODE'}</span>
         </div>
@@ -827,7 +784,7 @@ export default function App() {
       {/* Main Content Grid */}
       <main className="main-grid">
         {/* Left Section: Controls */}
-        <Controls 
+        <Controls
           micSensitivity={micSensitivity}
           setMicSensitivity={setMicSensitivity}
           vadThreshold={vadThreshold}
@@ -851,7 +808,7 @@ export default function App() {
 
           <Orb state={state} isWebSocketConnected={isWebSocketConnected} />
 
-          <Visualizers 
+          <Visualizers
             micAnalyser={micAnalyser}
             ttsAnalyser={ttsAnalyser}
             cancelledData={cancelledData}
@@ -861,7 +818,7 @@ export default function App() {
         </div>
 
         {/* Right Section: Logs & Code Inspector */}
-        <Transcript 
+        <Transcript
           history={history}
           eosJson={eosJson}
         />
@@ -876,10 +833,10 @@ export default function App() {
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <label className="upload-zone">
-              <input 
-                type="file" 
-                accept=".wav,.mp3" 
-                onChange={handleFileUpload} 
+              <input
+                type="file"
+                accept=".wav,.mp3"
+                onChange={handleFileUpload}
                 style={{ display: 'none' }}
                 disabled={isUploading}
               />
