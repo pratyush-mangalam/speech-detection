@@ -261,8 +261,8 @@ async def evaluate_eos(payload: EOSRequest):
             )
             
             req_model = payload.model or OPENAI_MODEL
-            if req_model == "google/gemini-2.0-flash":
-                req_model = "google/gemini-2.0-flash-001"
+            if req_model and "gemini-2.0-flash" in req_model:
+                req_model = "google/gemini-2.5-flash"
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
@@ -275,7 +275,8 @@ async def evaluate_eos(payload: EOSRequest):
                             {"role": "user", "content": f"Analyze this rolling transcript within a context window of {payload.duration_seconds} seconds: \"{transcript}\""}
                         ],
                         "response_format": {"type": "json_object"},
-                        "temperature": 0.1
+                        "temperature": 0.1,
+                        "max_tokens": 300
                     }
                 )
                 
@@ -308,7 +309,7 @@ async def evaluate_eos(payload: EOSRequest):
                         eos_detected=bool(res_json.get("eos_detected", False))
                     )
                 else:
-                    logger.warning(f"OpenRouter API error code {response.status_code}. Using local heuristics fallback.")
+                    logger.warning(f"OpenRouter API error code {response.status_code}: {response.text}. Using local heuristics fallback.")
         except Exception as e:
             logger.error(f"Error calling OpenRouter API: {str(e)}. Using local heuristics fallback.")
             
@@ -338,8 +339,8 @@ async def generate_response(payload: GenerateResponseRequest):
             system_prompt = "You are a helpful, concise real-time voice assistant. Keep answers short, conversational, and direct (1-3 sentences)."
             
             req_model = payload.model or OPENAI_MODEL
-            if req_model == "google/gemini-2.0-flash":
-                req_model = "google/gemini-2.0-flash-001"
+            if req_model and "gemini-2.0-flash" in req_model:
+                req_model = "google/gemini-2.5-flash"
 
             async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.post(
@@ -351,7 +352,8 @@ async def generate_response(payload: GenerateResponseRequest):
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": prompt}
                         ],
-                        "temperature": 0.7
+                        "temperature": 0.7,
+                        "max_tokens": 150
                     }
                 )
                 if response.status_code == 200:
@@ -455,7 +457,7 @@ async def upload_audio(file: UploadFile = File(...)):
             
             headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
             payload = {
-                "model": "google/gemini-2.0-flash-001",
+                "model": "google/gemini-2.5-flash",
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -463,7 +465,8 @@ async def upload_audio(file: UploadFile = File(...)):
                         {"type": "image_url", "image_url": {"url": audio_data_uri}}
                     ]
                 }],
-                "response_format": {"type": "json_object"}
+                "response_format": {"type": "json_object"},
+                "max_tokens": 500
             }
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(f"{OPENAI_BASE_URL}/chat/completions", headers=headers, json=payload)
@@ -528,7 +531,8 @@ async def upload_audio(file: UploadFile = File(...)):
                             {"role": "user", "content": f"Analyze this full batch transcript across a span of {duration} seconds: \"{selected_transcript}\""}
                         ],
                         "response_format": {"type": "json_object"},
-                        "temperature": 0.1
+                        "temperature": 0.1,
+                        "max_tokens": 500
                     }
                 )
                 

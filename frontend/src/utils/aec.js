@@ -51,21 +51,16 @@ export class AcousticEchoCanceller {
       return;
     }
 
-    // Time-domain adaptive reference subtraction:
-    // We align the signals and subtract. Since physical delay exists,
-    // we also apply a soft gate/attenuation based on the coupling factor.
+    // Apply a constant suppression factor based on the coupling factor to model physical echo cancellation/ducking.
+    // Clamped to 0.05 to avoid phase inversion at high coupling values.
+    const suppression = Math.max(0.05, 1.0 - (this.couplingFactor * 0.85));
+
     for (let i = 0; i < micTime.length; i++) {
       const micVal = micTime[i];
       const ttsVal = ttsTime[i] || 0.0;
       
-      // Subtract matching phase components
-      let cleanVal = micVal - (this.couplingFactor * ttsVal * 0.5);
-      
-      // Apply slight threshold attenuation if TTS is highly active to simulate room bleed suppression
-      if (Math.abs(ttsVal) > 0.05) {
-        cleanVal *= (1.0 - (this.couplingFactor * 0.4));
-      }
-      
+      // Subtract matching reference phase components and scale down residual bleed
+      const cleanVal = (micVal - (this.couplingFactor * ttsVal * 0.5)) * suppression;
       outputTime[i] = Math.max(-1.0, Math.min(1.0, cleanVal));
     }
   }

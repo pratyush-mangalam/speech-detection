@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const Orb = ({ state, isWebSocketConnected }) => {
+export const Orb = ({ state, isWebSocketConnected, onOrbClick }) => {
   // Map states to colors and shadows
   const stateConfig = {
     LISTENING: {
@@ -32,7 +32,14 @@ export const Orb = ({ state, isWebSocketConnected }) => {
   const current = stateConfig[state] || stateConfig.LISTENING;
 
   return (
-    <div className="center-container">
+    <div 
+      className={`center-container ${state === 'SPEAKING' ? 'clickable-speaking' : ''}`}
+      onClick={state === 'SPEAKING' ? onOrbClick : undefined}
+      style={{
+        cursor: state === 'SPEAKING' ? 'pointer' : 'default'
+      }}
+      title={state === 'SPEAKING' ? 'Click to interrupt AI' : undefined}
+    >
       <div className="orb-wrapper">
         {/* Layer 1 - Outer Glow */}
         <div 
@@ -128,6 +135,16 @@ export const Orb = ({ state, isWebSocketConnected }) => {
         @keyframes pulse-fast {
           0% { transform: scale(0.7); opacity: 0.8; }
           100% { transform: scale(0.95); opacity: 1.0; }
+        }
+        .clickable-speaking {
+          transition: transform 0.2s ease, filter 0.2s ease;
+        }
+        .clickable-speaking:hover {
+          transform: scale(1.05);
+          filter: brightness(1.2);
+        }
+        .clickable-speaking:active {
+          transform: scale(0.98);
         }
       `}</style>
     </div>

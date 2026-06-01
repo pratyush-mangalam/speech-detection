@@ -16,7 +16,7 @@ export default function App() {
 
   // Configuration Settings
   const [micSensitivity, setMicSensitivity] = useState(1.0);
-  const [vadThreshold, setVadThreshold] = useState(0.85);
+  const [vadThreshold, setVadThreshold] = useState(0.65);
   const [couplingFactor, setCouplingFactor] = useState(0.80);
   const [isAecEnabled, setIsAecEnabled] = useState(true);
   const [selectedModel, setSelectedModel] = useState('google/gemini-2.0-flash');
@@ -45,6 +45,7 @@ export default function App() {
   const eosRequestCounterRef = useRef(0);
   const currentDebounceDelayRef = useRef(650);
   const silenceFallbackTimeoutRef = useRef(null);
+  const bleedRMSRef = useRef(0.0);
 
   // TTS Ref Osc Node to generate reference carrier in Web Audio graph
   const ttsOscRef = useRef(null);
@@ -201,7 +202,7 @@ export default function App() {
     }
     // If the user has completely stopped speaking for 3.0 seconds, transition anyway
     silenceFallbackTimeoutRef.current = setTimeout(() => {
-      if (state === 'LISTENING') {
+      if (stateRef.current === 'LISTENING') {
         console.log("Silence fallback triggered. Transitioning to THINKING.");
         handleEOSTrigger(latestTranscriptRef.current || transcript);
       }
@@ -344,6 +345,7 @@ export default function App() {
       startedAt: Date.now(),
       charIndex: 0
     };
+    bleedRMSRef.current = 0.0;
 
     const utterance = new SpeechSynthesisUtterance(text);
 
@@ -531,6 +533,7 @@ export default function App() {
 
       setIsAudioActive(true);
       initializeASR();
+      setASRState(true);
 
       // Start processing loop
       startProcessingLoop(mAnalyser, tAnalyser);
@@ -600,9 +603,9 @@ export default function App() {
       // 2. Feed the echo-cancelled signal to the VAD
       const sampleRate = audioContextRef.current.sampleRate;
       const normalizedFreq = new Float32Array(fftSize);
-      // Construct a mockup frequency magnitude array from the cleaned time domain buffer
+      // Convert raw decibel frequency data (freqData[i]) to linear magnitude scale
       for (let i = 0; i < fftSize; i++) {
-        normalizedFreq[i] = Math.abs(cleanTime[i]);
+        normalizedFreq[i] = Math.pow(10, freqData[i] / 20);
       }
 
       const confidence = vadRef.current.computeConfidence(
@@ -616,7 +619,7 @@ export default function App() {
       vadConfidenceRef.current = confidence;
 
       // Update last speech time and postpone EOS triggers if user is actively speaking
-      if (confidence > 0.3) {
+      if (confidence >= vadThresholdRef.current) {
         lastSpeechTimeRef.current = Date.now();
         if (stateRef.current === 'LISTENING') {
           if (eosTimeoutRef.current) {
@@ -628,19 +631,23 @@ export default function App() {
         }
       }
 
-      // 3. Interruption Monitor
-      // Triggered immediately if VAD detects human speech onset (Confidence > vadThreshold)
-      // during SPEAKING state, AND the signal doesn't match the AEC reference.
-      if (aiSpeaking && confidence >= vadThresholdRef.current) {
-        // Ensure there is actual signal difference (i.e. user spoke, not just bleed)
-        // If AEC was fully successful, cleanTime contains the user's speech amplitude
+      // 3. Adaptive Interruption Monitor
+      // Learning phase (first 300ms of speaking): measures the speaker bleed floor.
+      // Active phase (after 300ms): triggers interruption only if volume exceeds bleed floor + safe margin.
+      if (aiSpeaking) {
+        const elapsed = currentUtteranceRef.current ? (Date.now() - currentUtteranceRef.current.startedAt) : 0;
         const rawRMS = vadRef.current.calculateRMS(timeData);
         const cleanRMS = vadRef.current.calculateRMS(cleanTime);
 
-        // If clean signal still has substantial energy compared to the raw bleed,
-        // it means there is an independent speech source (user voice)
-        if (cleanRMS > 0.005) {
-          triggerInterruption();
+        if (elapsed < 300) {
+          // Track peak speaker bleed energy during start
+          bleedRMSRef.current = Math.max(bleedRMSRef.current, cleanRMS);
+        } else {
+          // Require cleanRMS to exceed learned speaker bleed baseline by 0.025
+          const adaptiveThreshold = Math.max(0.025, bleedRMSRef.current + 0.025);
+          if (confidence >= vadThresholdRef.current && cleanRMS > adaptiveThreshold) {
+            triggerInterruption();
+          }
         }
       }
 
@@ -806,7 +813,15 @@ export default function App() {
             AGENT CORE AGGREGATOR
           </h3>
 
-          <Orb state={state} isWebSocketConnected={isWebSocketConnected} />
+          <Orb 
+            state={state} 
+            isWebSocketConnected={isWebSocketConnected} 
+            onOrbClick={() => {
+              if (state === 'SPEAKING') {
+                triggerInterruption();
+              }
+            }} 
+          />
 
           <Visualizers
             micAnalyser={micAnalyser}
