@@ -33,7 +33,27 @@ graph TD
 
 Ensure you have **Python 3.11+** and **Node.js 18+** installed.
 
-### 1. Backend (FastAPI)
+### 1. Environment Variables Configuration
+
+Create a `.env` file inside the `backend/` directory and configure the following variables:
+
+```env
+# OpenRouter API Key (Required for LLM-based Semantic EOS and response generation)
+OPENAI_API_KEY=your_openrouter_api_key_here
+
+# OpenRouter API Base URL (Optional, defaults to https://openrouter.ai/api/v1)
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+
+# OpenRouter Model Identifier (Optional, defaults to google/gemini-2.0-flash which maps internally to google/gemini-2.5-flash)
+OPENAI_MODEL=google/gemini-2.0-flash
+
+# Google GenAI API Key (Optional, required for native Gemini SDK audio upload/transcription)
+# Can use either GEMINI_API_KEY or GOOGLE_API_KEY
+GEMINI_API_KEY=your_google_gemini_api_key_here
+GOOGLE_API_KEY=your_google_gemini_api_key_here
+```
+
+### 2. Backend (FastAPI)
 Open a new terminal window:
 ```bash
 cd backend
@@ -42,7 +62,7 @@ python main.py
 ```
 *The FastAPI server will run on `http://127.0.0.1:8000`.*
 
-### 2. Frontend (React)
+### 3. Frontend (React)
 Open a second terminal window:
 ```bash
 cd frontend
